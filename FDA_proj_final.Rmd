@@ -1,0 +1,393 @@
+---
+title: "Water_Quality_Assessment"
+author: "Group H"
+date: "2024-10-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+df = read.csv("/Users/vichu/Desktop/fda.csv",header=FALSE)
+colnames(df) = df[1, ] 
+df = df[-1, ] 
+head(df,5)
+```
+```{r}
+str(df)
+```
+
+```{r}
+df$`Temperature Min` = as.numeric(df$`Temperature Min`)
+df$`Temperature Max`= as.numeric(df$`Temperature Max`)
+df$`pH Min` = as.numeric(df$`pH Min`)
+df$`pH Max`= as.numeric(df$`pH Max`)
+df$`Conductivity (µmhos/cm) Min`= as.numeric(df$`Conductivity (µmhos/cm) Min`)
+df$`Conductivity (µmhos/cm) Max`= as.numeric(df$`Conductivity (µmhos/cm) Max`)
+df$Year = as.numeric(df$Year)
+df$`Station Name`=as.factor(df$`Station Name`)
+df$STATE = as.factor(df$STATE)
+
+df$`Station Code` = as.numeric(df$`Station Code`)
+
+str(df)
+
+```
+
+```{r}
+print(sum(is.na(df)))
+```
+
+```{r}
+colSums(is.na(df))
+```
+
+```{r}
+na_rows = df[!complete.cases(df),]
+head(na_rows,5)
+```
+
+
+```{r}
+library(zoo)
+df$`Station Code` = na.approx(df$`Station Code`)
+df$`Temperature Min` = na.approx(df$`Temperature Min`)
+df$`Temperature Max`= na.approx(df$`Temperature Max`)
+df$`pH Min` = na.approx(df$`pH Min`)
+df$`pH Max` = na.approx(df$`pH Max`)
+df$`Conductivity (µmhos/cm) Min` = na.approx(df$`Conductivity (µmhos/cm) Min`)
+df$`Conductivity (µmhos/cm) Max` = na.approx(df$`Conductivity (µmhos/cm) Max`)
+df$Year = na.approx(df$Year)
+```
+```{r}
+colSums(is.na(df))
+```
+```{r}
+str(df)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(tm)        
+library(SnowballC)
+preprocess_text <- function(text) {
+
+  text <- tolower(text)
+
+  text <- str_replace_all(text, "[^\\w\\s]", "")
+
+  text <- str_replace_all(text, "\\d+", "")
+
+  text <- str_trim(text)
+ 
+  tokens <- unlist(str_split(text, "\\s+"))
+
+  stop_words <- stopwords("en")
+  tokens <- tokens[!tokens %in% stop_words]
+
+  tokens <- wordStem(tokens)
+
+  return(paste(tokens, collapse = " "))
+}
+
+
+df$`Station Name` <- as.character(df$`Station Name`)
+df$STATE <- as.character(df$STATE)
+
+df <- df %>%
+  mutate(
+    processed_station_name = sapply(`Station Name`, preprocess_text),
+    processed_state = sapply(STATE, preprocess_text)
+  )
+
+head(df,5)
+
+```
+```{r}
+str(df)
+```
+
+```{r}
+numeric_columns <- df %>%
+  select(`Temperature Min`, `Temperature Max`, `pH Min`, `pH Max`, `Conductivity (µmhos/cm) Min`, `Conductivity (µmhos/cm) Max`)
+
+correlation_matrix <- cor(numeric_columns, use = "complete.obs")
+print(correlation_matrix)
+```
+
+```{r}
+library(corrplot)
+
+corrplot(correlation_matrix, method = "color", tl.col = "black", tl.srt = 45, addCoef.col = "black", number.cex = 0.7)
+
+```
+
+```{r}
+library(dplyr)
+yearly_data <- df %>%
+  group_by(Year, `Station Name`, STATE) %>%
+  summarise(
+    Avg_Temperature_Min = mean(`Temperature Min`, na.rm = TRUE),
+    Avg_Temperature_Max = mean(`Temperature Max`, na.rm = TRUE),
+    Avg_pH_Min = mean(`pH Min`, na.rm = TRUE),
+    Avg_pH_Max = mean(`pH Max`, na.rm = TRUE),
+    Avg_Conductivity_Min = mean(`Conductivity (µmhos/cm) Min`, na.rm = TRUE),
+    Avg_Conductivity_Max = mean(`Conductivity (µmhos/cm) Max`, na.rm = TRUE),
+    .groups = 'drop' 
+  )
+
+print(yearly_data)
+```
+
+
+```{r}
+station_freq=table(df$`Station Name`)
+state_freq=table(df$STATE)
+
+station_freq_df = as.data.frame(station_freq)
+state_freq_df = as.data.frame(state_freq)
+
+colnames(station_freq_df) = c("Station Name", "Frequency")
+colnames(state_freq_df) = c("State", "Frequency")
+
+print(station_freq_df)
+print(state_freq_df)
+```
+
+
+```{r}
+hist(df$`Temperature Min`, main = "Histogram of Temperature Min", xlab = "Temperature Min", breaks = 20, col = "blue")
+hist(df$`Temperature Max`, main = "Histogram of Temperature Max", xlab = "Temperature Max", breaks = 20, col = "green")
+hist(df$`pH Min`, main = "Histogram of pH Min", xlab = "pH Min", breaks = 20, col = "red")
+hist(df$`pH Max`,main = "Histogram of pH Max",xlab = "pH Max", breaks = 20, col = 'orange')
+hist(df$`Conductivity (µmhos/cm) Min`, main = "Histogram of Conductivity Min", xlab = "Conductivity Min", breaks = 20, col = "purple")
+hist(df$`Conductivity (µmhos/cm) Max`,main = "Histogram of Conductivity Max", xlab = "Conductivity Max", breaks = 20, col = 'yellow')
+
+
+
+
+```
+
+The histogram of minimum temperature appears to be right-skewed
+The histogram of maximum temperature appears to be right-skewed
+The histogram of pH Min appears to be approximately normal
+The histogram of pH Max appears to be right-skewed
+The histogram of Conductivity Min appears to be right-skewed
+The histogram of Conductivity Max appears to be right-skewed. 
+
+```{r}
+library(dplyr)
+
+outlier_detection <- df %>%
+  group_by(STATE) %>%
+  mutate(
+    Temp_Min_IQR = IQR(`Temperature Min`, na.rm = TRUE),
+    Q1_Temp_Min = quantile(`Temperature Min`, 0.25, na.rm = TRUE),
+    Q3_Temp_Min = quantile(`Temperature Min`, 0.75, na.rm = TRUE),
+
+    Temp_Max_IQR = IQR(`Temperature Max`, na.rm = TRUE),
+    Q1_Temp_Max = quantile(`Temperature Max`, 0.25, na.rm = TRUE),
+    Q3_Temp_Max = quantile(`Temperature Max`, 0.75, na.rm = TRUE),
+    
+    pH_Max_IQR = IQR(`pH Max`, na.rm = TRUE),
+    Q1_pH_Max = quantile(`pH Max`, 0.25, na.rm = TRUE),
+    Q3_pH_Max = quantile(`pH Max`, 0.75, na.rm = TRUE),
+    
+    Conductivity_Min_IQR = IQR(`Conductivity (µmhos/cm) Min`, na.rm = TRUE),
+    Q1_Conductivity_Min = quantile(`Conductivity (µmhos/cm) Min`, 0.25, na.rm = TRUE),
+    Q3_Conductivity_Min = quantile(`Conductivity (µmhos/cm) Min`, 0.75, na.rm = TRUE),
+    
+    Conductivity_Max_IQR = IQR(`Conductivity (µmhos/cm) Max`, na.rm = TRUE),
+    Q1_Conductivity_Max = quantile(`Conductivity (µmhos/cm) Max`, 0.25, na.rm = TRUE),
+    Q3_Conductivity_Max = quantile(`Conductivity (µmhos/cm) Max`, 0.75, na.rm = TRUE),
+
+    
+    pH_Min_Z = (`pH Min` - mean(`pH Min`, na.rm = TRUE)) / sd(`pH Min`, na.rm = TRUE)
+  ) %>%
+ 
+  mutate(
+    Temp_Min_Outlier = `Temperature Min` < (Q1_Temp_Min - 1.5 * Temp_Min_IQR) | `Temperature Min` > (Q3_Temp_Min + 1.5 * Temp_Min_IQR),
+    Temp_Max_Outlier = `Temperature Max` < (Q1_Temp_Max - 1.5 * Temp_Max_IQR) | `Temperature Max` > (Q3_Temp_Max + 1.5 * Temp_Max_IQR),
+    pH_Max_Outlier = `pH Max` < (Q1_pH_Max - 1.5 * pH_Max_IQR) | `pH Max` > (Q3_pH_Max + 1.5 * pH_Max_IQR),
+    Conductivity_Min_Outlier = `Conductivity (µmhos/cm) Min` < (Q1_Conductivity_Min - 1.5 * Conductivity_Min_IQR) | `Conductivity (µmhos/cm) Min` > (Q3_Conductivity_Min + 1.5 * Conductivity_Min_IQR),
+    Conductivity_Max_Outlier = `Conductivity (µmhos/cm) Max` < (Q1_Conductivity_Max - 1.5 * Conductivity_Max_IQR) | `Conductivity (µmhos/cm) Max` > (Q3_Conductivity_Max + 1.5 * Conductivity_Max_IQR),
+
+    pH_Min_Outlier = abs(pH_Min_Z) > 3
+  )
+
+outlier_detection
+
+```
+
+```{r}
+colnames(outlier_detection)
+```
+
+```{r}
+outliers <- outlier_detection %>%
+  filter(Temp_Min_Outlier == TRUE | 
+         Temp_Max_Outlier == TRUE | 
+         pH_Max_Outlier == TRUE | 
+         Conductivity_Min_Outlier == TRUE | 
+         Conductivity_Max_Outlier == TRUE | 
+         pH_Min_Outlier == TRUE)
+
+head(outliers)
+
+```
+
+```{r}
+outlier_count_by_state <- outliers %>%
+  group_by(STATE) %>%
+  summarise(Outlier_Count = n())
+
+print(outlier_count_by_state)
+
+```
+
+```{r}
+
+yearly_data <- df %>%
+  group_by(Year) %>%
+  summarise(Avg_Temperature_Min = mean(`Temperature Min`, na.rm = TRUE))
+
+temperature_ts <- ts(yearly_data$Avg_Temperature_Min, 
+                     start = min(yearly_data$Year), 
+                     end = max(yearly_data$Year), 
+                     frequency = 1)
+
+# Apply first differencing to the time series
+diff_temperature_ts <- diff(temperature_ts)
+
+# Plot the differenced series
+plot(temperature_ts, main = "Temperature Time Series", ylab = "Avg Temperature Min", xlab = "Year")
+
+
+```
+```{r}
+library(tseries)
+adf_test_diff <- adf.test(diff_temperature_ts)
+print(adf_test_diff)
+
+
+```
+```{r}
+library(forecast)
+# Fit ARIMA model on the original series with first differencing
+arima_model_diff <- auto.arima(temperature_ts, d = 1)  # d=1 for first differencing
+
+# Summary of the ARIMA model
+summary(arima_model_diff)
+
+```
+```{r}
+# Forecast the next 5 periods (e.g., years)
+forecast_diff_values <- forecast(arima_model_diff, h = 20)
+
+# Plot the forecast
+plot(forecast_diff_values, main = "ARIMA Forecast for Temperature Min", xlab = "Year", ylab = "Temperature Min")
+
+# Print the forecasted values
+print(forecast_diff_values)
+
+```
+```{r}
+# Check residuals of the ARIMA model
+checkresiduals(arima_model_diff)
+
+```
+
+```{r}
+# Assuming df contains data up to 2021
+library(dplyr)
+
+# Prepare the training data
+train_data <- df %>% filter(Year <= 2021)
+
+# Create a linear model for each target variable
+lm_models <- list()
+target_columns <- c("Temperature Min", "Temperature Max", "pH Min", "pH Max", 
+                    "Conductivity (µmhos/cm) Min", "Conductivity (µmhos/cm) Max")
+
+# Train models for each target variable
+for (target in target_columns) {
+  formula <- as.formula(paste("`", target, "` ~ Year", sep = ""))  # Enclose column name in backticks
+  lm_models[[target]] <- lm(formula, data = train_data)
+}
+
+# Forecast for 2022–2026
+forecast_years <- 2022:2030
+forecasted_values <- data.frame(Year = forecast_years)
+
+# Apply the models to forecast future values
+for (target in target_columns) {
+  forecasted_values[[target]] <- predict(lm_models[[target]], newdata = forecasted_values)
+}
+
+# Print the forecasted values for 2022–2026
+print(forecasted_values)
+```
+
+```{r}
+# Assuming df contains data up to 2021
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Prepare the training data
+train_data <- df %>% filter(Year <= 2021)
+
+# Create a linear model for each target variable
+lm_models <- list()
+target_columns <- c("Temperature Min", "Temperature Max", "pH Min", "pH Max", 
+                    "Conductivity (µmhos/cm) Min", "Conductivity (µmhos/cm) Max")
+
+# Train models for each target variable
+for (target in target_columns) {
+  formula <- as.formula(paste("`", target, "` ~ Year", sep = ""))  # Enclose column name in backticks
+  lm_models[[target]] <- lm(formula, data = train_data)
+}
+
+# Forecast for 2022–2026
+forecast_years <- 2022:2030
+forecasted_values <- data.frame(Year = forecast_years)
+
+# Apply the models to forecast future values
+for (target in target_columns) {
+  forecasted_values[[target]] <- predict(lm_models[[target]], newdata = forecasted_values)
+}
+
+# Reshape the forecasted data for plotting (long format)
+forecasted_values_long <- forecasted_values %>%
+  gather(key = "Variable", value = "Forecast", -Year)  # Using gather() to reshape
+
+# Plot the forecasted values using ggplot2 and facet_wrap
+ggplot(forecasted_values_long, aes(x = Year, y = Forecast, color = Variable, group = Variable)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  labs(title = "Forecasted Values for 2022–2030",
+       x = "Year",
+       y = "Forecasted Value") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("Temperature Min" = "blue", 
+                                "Temperature Max" = "red", 
+                                "pH Min" = "green", 
+                                "pH Max" = "purple", 
+                                "Conductivity (µmhos/cm) Min" = "orange", 
+                                "Conductivity (µmhos/cm) Max" = "brown")) +
+  facet_wrap(~ Variable, scales = "free_y")  # Creates separate plots for each variable
+
+
+```
+
+
+
+
+
+
+
+
